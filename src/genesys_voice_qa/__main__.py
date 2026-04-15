@@ -12,8 +12,14 @@ Environment variables (see .env.example):
     GENESYS_REGION, GENESYS_CLIENT_ID, GENESYS_CLIENT_SECRET
     LLM_BACKEND (azure | gateway)
     AZURE_OPENAI_* or AI_GATEWAY_*
-    NOTIFICATION_WEBHOOK_URL (optional — logs to stdout if absent)
+    SLACK_BOT_TOKEN + SLACK_CHANNEL (preferred notification channel)
+    NOTIFICATION_WEBHOOK_URL (fallback generic webhook)
     ANALYSIS_UTTERANCE_WINDOW (optional, default 20)
+
+Sink selection priority:
+    1. Slack   — when SLACK_BOT_TOKEN and SLACK_CHANNEL are both set
+    2. Webhook — when NOTIFICATION_WEBHOOK_URL is set
+    3. Logging — stdout fallback
 """
 
 from __future__ import annotations
@@ -32,14 +38,21 @@ from genesys_voice_qa.genesys_listener import GenesysNotificationsListener
 from genesys_voice_qa.notifications import (
     LoggingNotificationSink,
     NotificationSink,
+    SlackNotificationSink,
     WebhookNotificationSink,
 )
 
 
 def _build_sink() -> NotificationSink:
+    slack_token = os.getenv("SLACK_BOT_TOKEN", "").strip()
+    slack_channel = os.getenv("SLACK_CHANNEL", "").strip()
+    if slack_token and slack_channel:
+        return SlackNotificationSink(bot_token=slack_token, channel=slack_channel)
+
     webhook_url = os.getenv("NOTIFICATION_WEBHOOK_URL", "").strip()
     if webhook_url:
         return WebhookNotificationSink(url=webhook_url)
+
     return LoggingNotificationSink()
 
 
@@ -76,11 +89,13 @@ def main() -> None:
         utterance_window=utterance_window,
     )
 
+    sink_name = type(sink).__name__
     logger.info(
-        "Starting Genesys Voice QA Agent | region=%s | backend=%s | window=%d utterances",
+        "Starting Genesys Voice QA Agent | region=%s | backend=%s | window=%d utterances | sink=%s",
         region,
         os.getenv("LLM_BACKEND", "azure"),
         utterance_window,
+        sink_name,
     )
     asyncio.run(listener.run_forever())
 
