@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "genesys-voice-qa-agent"
+version = "0.1.0"
+description = "Live-call transcript/audio quality signals for Genesys, via swappable LLM completion clients."
+requires-python = ">=3.10"
+dependencies = [
+  "httpx>=0.27",
+  "openai>=1.40",
+  "pydantic>=2.5",
+  "websockets>=12.0",
+  "python-dotenv>=1.0",
+]
+
+[project.scripts]
+genesys-voice-qa = "genesys_voice_qa.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,32 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Genesys Voice QA Agent",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "genesys_voice_qa",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "LOG_LEVEL": "DEBUG"
+      },
+      "python": "${workspaceFolder}/.venv/bin/python"
+    },
+    {
+      "name": "Genesys Voice QA Agent (gateway backend)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "genesys_voice_qa",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "envFile": "${workspaceFolder}/.env",
+      "env": {
+        "LOG_LEVEL": "DEBUG",
+        "LLM_BACKEND": "gateway"
+      },
+      "python": "${workspaceFolder}/.venv/bin/python"
+    }
+  ]
+}
