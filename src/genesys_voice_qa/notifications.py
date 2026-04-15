@@ -61,39 +61,88 @@ class WebhookNotificationSink(NotificationSink):
 
 
 class SlackNotificationSink(NotificationSink):
-    """Send call quality alerts to a Slack channel or user via a Slack Bot token.
+    """Send call quality alerts to a Slack user (looked up by email) via a Bot token.
 
-    Required Slack app permissions (Bot Token Scopes):
-        chat:write        — post messages to channels the bot is a member of
-        chat:write.public — post to public channels without joining (optional)
+    The sink resolves the email → Slack user ID on first use and caches it for the
+    lifetime of the process, so ``users.lookupByEmail`` is only called once.
+
+    Required Slack App Bot Token Scopes:
+        users:read.email  — resolve email → user ID
+        chat:write        — open a DM and post messages
 
     Parameters
     ----------
     bot_token:
         Slack Bot OAuth token (starts with ``xoxb-``).
-    channel:
-        Slack channel ID (e.g. ``C012AB3CD``) or name (e.g. ``#call-quality``),
-        or a user ID (e.g. ``U012AB3CD``) to DM an agent directly.
+    recipient_email:
+        Work email address of the person who should receive the DM alert.
+        Typically the supervisor or QA lead on duty.
     timeout_s:
         HTTP request timeout in seconds.
     """
 
-    _POST_URL = "https://slack.com/api/chat.postMessage"
+    _LOOKUP_URL = "https://slack.com/api/users.lookupByEmail"
+    _POST_URL   = "https://slack.com/api/chat.postMessage"
 
     def __init__(
         self,
         *,
         bot_token: str,
-        channel: str,
+        recipient_email: str,
         timeout_s: float = 15.0,
     ) -> None:
         self._token = bot_token
-        self._channel = channel
+        self._email = recipient_email
         self._timeout = timeout_s
+        self._user_id: str | None = None   # resolved lazily and cached
+
+    # ------------------------------------------------------------------
+    # User resolution
+    # ------------------------------------------------------------------
+
+    def _resolve_user_id(self) -> str:
+        """Look up the Slack user ID for the configured email (cached after first call)."""
+        if self._user_id:
+            return self._user_id
+
+        headers = {"Authorization": f"Bearer {self._token}"}
+        with httpx.Client(timeout=self._timeout) as client:
+            response = client.get(
+                self._LOOKUP_URL,
+                headers=headers,
+                params={"email": self._email},
+            )
+            response.raise_for_status()
+            body = response.json()
+
+        if not body.get("ok"):
+            error = body.get("error", "unknown_error")
+            logger.error(
+                "Slack users.lookupByEmail failed for %s: %s", self._email, error
+            )
+            raise RuntimeError(
+                f"Could not resolve Slack user for email '{self._email}': {error}"
+            )
+
+        user_id: str = body["user"]["id"]
+        display_name: str = (
+            body["user"].get("profile", {}).get("display_name")
+            or body["user"].get("real_name", "")
+        )
+        logger.info(
+            "Resolved Slack user: %s → %s (%s)", self._email, user_id, display_name
+        )
+        self._user_id = user_id
+        return user_id
+
+    # ------------------------------------------------------------------
+    # Send
+    # ------------------------------------------------------------------
 
     def send(self, notification: QualityNotification) -> None:
+        user_id = self._resolve_user_id()
         blocks = self._build_blocks(notification)
-        # Highest-severity colour drives the attachment bar
+
         issues = notification.metadata.get("issues", [])
         severities = [i.get("severity", "low") for i in issues]
         colour = _SEVERITY_COLOUR.get(
@@ -102,8 +151,8 @@ class SlackNotificationSink(NotificationSink):
         )
 
         payload = {
-            "channel": self._channel,
-            "text": notification.title,   # fallback for notifications / accessibility
+            "channel": user_id,           # Slack opens a DM when channel = user ID
+            "text": notification.title,   # plain-text fallback for push notifications
             "attachments": [
                 {
                     "color": colour,
@@ -128,12 +177,13 @@ class SlackNotificationSink(NotificationSink):
 
         if not body.get("ok"):
             error = body.get("error", "unknown_error")
-            logger.error("Slack API error: %s | payload: %s", error, body)
+            logger.error("Slack chat.postMessage error: %s | body: %s", error, body)
             raise RuntimeError(f"Slack chat.postMessage failed: {error}")
 
         logger.info(
-            "Slack alert sent to %s | ts=%s",
-            self._channel,
+            "Slack DM sent to %s (%s) | ts=%s",
+            self._email,
+            user_id,
             body.get("ts"),
         )
 

@@ -12,12 +12,12 @@ Environment variables (see .env.example):
     GENESYS_REGION, GENESYS_CLIENT_ID, GENESYS_CLIENT_SECRET
     LLM_BACKEND (azure | gateway)
     AZURE_OPENAI_* or AI_GATEWAY_*
-    SLACK_BOT_TOKEN + SLACK_CHANNEL (preferred notification channel)
+    SLACK_BOT_TOKEN + SLACK_RECIPIENT_EMAIL (preferred — DMs the user by email)
     NOTIFICATION_WEBHOOK_URL (fallback generic webhook)
     ANALYSIS_UTTERANCE_WINDOW (optional, default 20)
 
 Sink selection priority:
-    1. Slack   — when SLACK_BOT_TOKEN and SLACK_CHANNEL are both set
+    1. Slack   — when SLACK_BOT_TOKEN and SLACK_RECIPIENT_EMAIL are both set
     2. Webhook — when NOTIFICATION_WEBHOOK_URL is set
     3. Logging — stdout fallback
 """
@@ -45,9 +45,9 @@ from genesys_voice_qa.notifications import (
 
 def _build_sink() -> NotificationSink:
     slack_token = os.getenv("SLACK_BOT_TOKEN", "").strip()
-    slack_channel = os.getenv("SLACK_CHANNEL", "").strip()
-    if slack_token and slack_channel:
-        return SlackNotificationSink(bot_token=slack_token, channel=slack_channel)
+    slack_email = os.getenv("SLACK_RECIPIENT_EMAIL", "").strip()
+    if slack_token and slack_email:
+        return SlackNotificationSink(bot_token=slack_token, recipient_email=slack_email)
 
     webhook_url = os.getenv("NOTIFICATION_WEBHOOK_URL", "").strip()
     if webhook_url:
